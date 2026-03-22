@@ -1,0 +1,1597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CodeShift — Multi-Language Transpiler</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
+
+  <!-- CodeMirror -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/eclipse.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/sql/sql.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
+
+  <style>
+    :root {
+      --bg: #0d0d0f;
+      --bg2: #141416;
+      --bg3: #1a1a1e;
+      --border: #2a2a32;
+      --accent: #00e5ff;
+      --accent2: #7c3aed;
+      --accent3: #f59e0b;
+      --text: #e8e8f0;
+      --text2: #9090a8;
+      --text3: #5a5a70;
+      --success: #10b981;
+      --error: #ef4444;
+      --tab-active: #00e5ff;
+      --editor-bg: #111114;
+      --panel-bg: #13131a;
+      --radius: 10px;
+      --font-ui: 'Syne', sans-serif;
+      --font-code: 'JetBrains Mono', monospace;
+    }
+    .light {
+      --bg: #f0f0f5;
+      --bg2: #ffffff;
+      --bg3: #e8e8f0;
+      --border: #d0d0df;
+      --text: #1a1a2e;
+      --text2: #4a4a6a;
+      --text3: #9090b0;
+      --editor-bg: #ffffff;
+      --panel-bg: #f8f8ff;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font-ui);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      transition: background 0.3s, color 0.3s;
+      overflow-x: hidden;
+    }
+    /* ── TOP NAV ── */
+    .nav {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 24px; height: 52px;
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; z-index: 100;
+    }
+    .nav-logo {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 1.2rem; font-weight: 800; letter-spacing: -0.5px;
+    }
+    .nav-logo span { color: var(--accent); }
+    .logo-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 10px var(--accent);
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.6;transform:scale(1.3)} }
+
+    .nav-tabs { display: flex; gap: 4px; }
+    .nav-tab {
+      padding: 6px 14px; border-radius: 6px; cursor: pointer;
+      font-size: .8rem; font-weight: 600; letter-spacing: .3px;
+      color: var(--text2); background: transparent; border: none;
+      transition: all .2s; font-family: var(--font-ui);
+    }
+    .nav-tab:hover { background: var(--bg3); color: var(--text); }
+    .nav-tab.active {
+      background: var(--bg3); color: var(--accent);
+      box-shadow: inset 0 -2px 0 var(--accent);
+    }
+    .nav-right { display: flex; align-items: center; gap: 12px; }
+    .theme-btn {
+      width: 36px; height: 36px; border-radius: 8px;
+      background: var(--bg3); border: 1px solid var(--border);
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      font-size: 1rem; transition: all .2s;
+    }
+    .theme-btn:hover { background: var(--border); }
+    .badge {
+      font-size: .65rem; padding: 2px 8px; border-radius: 20px;
+      font-weight: 700; letter-spacing: .5px;
+      background: linear-gradient(135deg, var(--accent2), var(--accent));
+      color: white;
+    }
+
+    /* ── MAIN LAYOUT ── */
+    .main { padding: 20px 20px 40px; max-width: 1600px; margin: 0 auto; }
+    .page { display: none; }
+    .page.active { display: block; }
+
+    /* ── TRANSPILER PAGE ── */
+    .transpiler-controls {
+      display: flex; align-items: center; gap: 12px;
+      margin-bottom: 16px; flex-wrap: wrap;
+    }
+    .lang-block {
+      display: flex; align-items: center; gap: 10px;
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 8px 14px;
+      flex: 1; min-width: 200px;
+    }
+    .lang-label { font-size: .75rem; color: var(--text3); font-weight: 600; text-transform: uppercase; letter-spacing: .8px; }
+    .lang-select {
+      background: var(--bg3); border: 1px solid var(--border);
+      color: var(--text); padding: 6px 12px; border-radius: 6px;
+      font-family: var(--font-ui); font-size: .85rem; cursor: pointer;
+      flex: 1; outline: none;
+    }
+    .swap-btn {
+      width: 40px; height: 40px; background: var(--bg3);
+      border: 1px solid var(--border); border-radius: 8px;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      font-size: 1.1rem; transition: all .2s; flex-shrink: 0;
+    }
+    .swap-btn:hover { background: var(--accent); color: #000; border-color: var(--accent); transform: rotate(180deg); }
+    .convert-btn {
+      padding: 10px 28px; background: var(--accent);
+      color: #000; border: none; border-radius: 8px;
+      font-family: var(--font-ui); font-size: .9rem; font-weight: 700;
+      cursor: pointer; transition: all .2s; letter-spacing: .3px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .convert-btn:hover { background: #00c4db; transform: translateY(-1px); box-shadow: 0 4px 20px rgba(0,229,255,.3); }
+    .convert-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+    .convert-btn .spinner {
+      width: 14px; height: 14px; border: 2px solid rgba(0,0,0,.2);
+      border-top-color: #000; border-radius: 50%; animation: spin .6s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── EDITOR PANELS ── */
+    .editors-row {
+      display: grid; grid-template-columns: 1fr auto 1fr;
+      gap: 0; min-height: 500px;
+    }
+    .editor-panel {
+      background: var(--panel-bg); border: 1px solid var(--border);
+      border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column;
+    }
+    .editor-panel.left { border-radius: var(--radius) 0 0 var(--radius); border-right: none; }
+    .editor-panel.right { border-radius: 0 var(--radius) var(--radius) 0; }
+    .panel-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 14px; background: var(--bg2); border-bottom: 1px solid var(--border);
+    }
+    .panel-title {
+      display: flex; align-items: center; gap: 8px;
+      font-size: .75rem; font-weight: 700; letter-spacing: .5px;
+      color: var(--text2); text-transform: uppercase;
+    }
+    .lang-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .panel-actions { display: flex; gap: 6px; }
+    .icon-btn {
+      padding: 4px 10px; background: var(--bg3); border: 1px solid var(--border);
+      border-radius: 5px; cursor: pointer; font-size: .75rem; color: var(--text2);
+      font-family: var(--font-ui); transition: all .15s;
+    }
+    .icon-btn:hover { background: var(--border); color: var(--text); }
+
+    .editor-wrapper { flex: 1; overflow: hidden; }
+    .CodeMirror {
+      height: 460px !important; font-family: var(--font-code) !important;
+      font-size: 13.5px !important; line-height: 1.65 !important;
+    }
+
+    /* Divider */
+    .editors-divider {
+      width: 40px; display: flex; align-items: center; justify-content: center;
+      position: relative; z-index: 1;
+    }
+    .divider-line {
+      width: 1px; height: 100%; background: var(--border);
+      position: absolute;
+    }
+    .divider-icon {
+      width: 32px; height: 32px; background: var(--bg2);
+      border: 1px solid var(--border); border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: .8rem; position: relative; z-index: 2;
+      color: var(--text3);
+    }
+
+    /* ── ERROR / STATUS BAR ── */
+    .status-bar {
+      margin-top: 8px; padding: 8px 14px;
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 6px; font-size: .78rem;
+      display: flex; align-items: center; gap: 8px;
+      font-family: var(--font-code);
+    }
+    .status-ok { color: var(--success); }
+    .status-err { color: var(--error); }
+    .status-info { color: var(--text2); }
+
+    /* ── SQL CONVERTER ── */
+    .sql-page, .ts-page, .ast-page {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+    }
+    .feature-panel {
+      background: var(--panel-bg); border: 1px solid var(--border);
+      border-radius: var(--radius); overflow: hidden;
+    }
+    .feature-header {
+      padding: 10px 16px; background: var(--bg2); border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .feature-title { font-size: .85rem; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+    .mock-badge {
+      font-size: .6rem; padding: 2px 7px; border-radius: 20px;
+      background: rgba(245,158,11,.15); border: 1px solid rgba(245,158,11,.3);
+      color: var(--accent3); font-weight: 700; letter-spacing: .5px;
+    }
+    .feature-body { padding: 14px; }
+    .sql-input, .ts-input, .ast-input {
+      width: 100%; min-height: 200px; resize: vertical;
+      background: var(--editor-bg); color: var(--text);
+      border: 1px solid var(--border); border-radius: 6px;
+      padding: 12px; font-family: var(--font-code); font-size: 12.5px;
+      outline: none; transition: border-color .2s;
+    }
+    .sql-input:focus, .ts-input:focus { border-color: var(--accent); }
+    .output-box {
+      min-height: 200px; background: var(--editor-bg);
+      border: 1px solid var(--border); border-radius: 6px;
+      padding: 12px; font-family: var(--font-code); font-size: 12.5px;
+      color: var(--success); white-space: pre-wrap; overflow-y: auto;
+    }
+    .action-row { display: flex; gap: 8px; margin: 10px 0; flex-wrap: wrap; }
+    .feature-btn {
+      padding: 8px 18px; border-radius: 6px; cursor: pointer;
+      font-family: var(--font-ui); font-size: .82rem; font-weight: 700;
+      border: none; transition: all .2s;
+    }
+    .btn-primary { background: var(--accent); color: #000; }
+    .btn-primary:hover { background: #00c4db; transform: translateY(-1px); }
+    .btn-secondary {
+      background: var(--bg3); color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover { background: var(--border); }
+
+    /* ── AST VIEWER ── */
+    .ast-page { grid-template-columns: 1fr 2fr; }
+    .ast-tree {
+      background: var(--editor-bg); border: 1px solid var(--border);
+      border-radius: 6px; padding: 12px; font-family: var(--font-code);
+      font-size: 12px; min-height: 400px; overflow-y: auto;
+    }
+    .ast-node {
+      padding: 3px 0 3px 18px; position: relative; cursor: pointer;
+      color: var(--text);
+    }
+    .ast-node::before {
+      content: ''; position: absolute; left: 0; top: 50%;
+      width: 12px; height: 1px; background: var(--border);
+    }
+    .ast-node::after {
+      content: ''; position: absolute; left: 0; top: 0;
+      bottom: 0; width: 1px; background: var(--border);
+    }
+    .ast-node:last-child::after { height: 50%; }
+    .ast-key { color: var(--accent); }
+    .ast-val { color: var(--accent3); }
+    .ast-type { color: var(--accent2); font-weight: 600; }
+    .ast-container { padding-left: 20px; }
+    .ast-toggle { color: var(--text3); margin-right: 4px; }
+    .collapsed > .ast-container { display: none; }
+
+    /* ── INFO CARDS ── */
+    .info-strip {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+      margin-bottom: 16px;
+    }
+    .info-card {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 12px 16px;
+      display: flex; align-items: center; gap: 12px;
+    }
+    .info-icon { font-size: 1.4rem; }
+    .info-text { font-size: .75rem; color: var(--text2); }
+    .info-val { font-size: 1rem; font-weight: 700; color: var(--text); }
+
+    /* ── TOAST ── */
+    .toast {
+      position: fixed; bottom: 24px; right: 24px; z-index: 999;
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 10px 16px;
+      font-size: .82rem; display: flex; align-items: center; gap: 8px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.4);
+      animation: slideIn .2s ease; pointer-events: none;
+    }
+    @keyframes slideIn { from { transform: translateY(20px); opacity:0; } to { transform: translateY(0); opacity:1; } }
+    .toast-icon { font-size: 1rem; }
+
+    /* ── PAGE HEADER ── */
+    .page-header {
+      margin-bottom: 16px; padding: 16px 20px;
+      background: linear-gradient(135deg, var(--bg2), var(--bg3));
+      border: 1px solid var(--border); border-radius: var(--radius);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .page-header h2 { font-size: 1.1rem; font-weight: 800; }
+    .page-header p { font-size: .8rem; color: var(--text2); margin-top: 3px; }
+
+    /* ── RESPONSIVE ── */
+    @media (max-width: 900px) {
+      .editors-row { grid-template-columns: 1fr; }
+      .editors-divider { display: none; }
+      .editor-panel.left, .editor-panel.right { border-radius: var(--radius); border: 1px solid var(--border); }
+      .sql-page, .ts-page { grid-template-columns: 1fr; }
+      .ast-page { grid-template-columns: 1fr; }
+      .info-strip { grid-template-columns: repeat(2,1fr); }
+      .nav-tabs { display: none; }
+    }
+    @media (max-width: 600px) {
+      .transpiler-controls { flex-direction: column; }
+      .nav { padding: 0 12px; }
+      .main { padding: 12px; }
+    }
+
+    /* ── MOBILE TAB BAR ── */
+    .mobile-tabs {
+      display: none; position: fixed; bottom: 0; left: 0; right: 0;
+      background: var(--bg2); border-top: 1px solid var(--border);
+      padding: 6px 10px; z-index: 100; gap: 4px;
+    }
+    @media (max-width: 900px) { .mobile-tabs { display: flex; } }
+    .mobile-tab {
+      flex: 1; padding: 6px 4px; text-align: center;
+      font-size: .65rem; font-weight: 700; color: var(--text3);
+      cursor: pointer; border-radius: 6px; border: none; background: none;
+      font-family: var(--font-ui); transition: all .2s;
+    }
+    .mobile-tab.active { color: var(--accent); background: var(--bg3); }
+    .mobile-tab-icon { font-size: 1.1rem; display: block; margin-bottom: 2px; }
+
+    /* scrollbar */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <!-- NAV -->
+  <nav class="nav">
+    <div class="nav-logo">
+      <div class="logo-dot"></div>
+      Code<span>Shift</span>
+    </div>
+    <div class="nav-tabs">
+      <button class="nav-tab active" onclick="showPage('transpiler',this)">⚡ Transpiler</button>
+      <button class="nav-tab" onclick="showPage('sql',this)">🗄 SQL→MySQL</button>
+      <button class="nav-tab" onclick="showPage('ts',this)">📘 TS→JS</button>
+      <button class="nav-tab" onclick="showPage('ast',this)">🌳 AST Viewer</button>
+    </div>
+    <div class="nav-right">
+      <span class="badge">v1.0</span>
+      <button class="theme-btn" id="themeBtn" onclick="toggleTheme()" title="Toggle theme">🌙</button>
+    </div>
+  </nav>
+
+  <div class="main">
+
+    <!-- ══════════════════════════════ TRANSPILER PAGE ══════════════════════════════ -->
+    <div class="page active" id="page-transpiler">
+      <div class="info-strip">
+        <div class="info-card"><span class="info-icon">🔄</span><div><div class="info-val">4</div><div class="info-text">Language Pairs</div></div></div>
+        <div class="info-card"><span class="info-icon">⚙️</span><div><div class="info-val">AI+Rules</div><div class="info-text">Engine Type</div></div></div>
+        <div class="info-card"><span class="info-icon">📦</span><div><div class="info-val">6</div><div class="info-text">Constructs</div></div></div>
+        <div class="info-card"><span class="info-icon">🎯</span><div><div class="info-val">Real-time</div><div class="info-text">Conversion</div></div></div>
+      </div>
+
+      <!-- Controls -->
+      <div class="transpiler-controls">
+        <div class="lang-block">
+          <span class="info-icon" id="srcIcon">📄</span>
+          <span class="lang-label">From</span>
+          <select class="lang-select" id="srcLang" onchange="updateLangIcons()">
+            <option value="c">C</option>
+            <option value="cpp">C++</option>
+            <option value="python">Python</option>
+          </select>
+        </div>
+        <button class="swap-btn" onclick="swapLangs()" title="Swap languages">⇄</button>
+        <div class="lang-block">
+          <span class="info-icon" id="tgtIcon">🐍</span>
+          <span class="lang-label">To</span>
+          <select class="lang-select" id="tgtLang" onchange="updateLangIcons()">
+            <option value="python">Python</option>
+            <option value="c">C</option>
+            <option value="cpp">C++</option>
+          </select>
+        </div>
+        <button class="convert-btn" id="convertBtn" onclick="doConvert()">
+          <span id="btnIcon">⚡</span>
+          <span id="btnText">Convert</span>
+        </button>
+        <button class="icon-btn" onclick="loadSample()">📋 Sample</button>
+        <button class="icon-btn" onclick="clearAll()">🗑 Clear</button>
+      </div>
+
+      <!-- Editor panels -->
+      <div class="editors-row">
+        <div class="editor-panel left">
+          <div class="panel-header">
+            <div class="panel-title">
+              <span class="lang-dot" style="background:#f59e0b"></span>
+              <span id="srcPanelTitle">SOURCE CODE</span>
+            </div>
+            <div class="panel-actions">
+              <button class="icon-btn" onclick="copySource()">⎘ Copy</button>
+            </div>
+          </div>
+          <div class="editor-wrapper">
+            <textarea id="sourceEditor"></textarea>
+          </div>
+        </div>
+
+        <div class="editors-divider">
+          <div class="divider-line"></div>
+          <div class="divider-icon">→</div>
+        </div>
+
+        <div class="editor-panel right">
+          <div class="panel-header">
+            <div class="panel-title">
+              <span class="lang-dot" style="background:#00e5ff"></span>
+              <span id="tgtPanelTitle">OUTPUT CODE</span>
+            </div>
+            <div class="panel-actions">
+              <button class="icon-btn" onclick="copyOutput()">⎘ Copy</button>
+              <button class="icon-btn" onclick="downloadOutput()">⬇ Download</button>
+            </div>
+          </div>
+          <div class="editor-wrapper">
+            <textarea id="outputEditor"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- Status bar -->
+      <div class="status-bar" id="statusBar">
+        <span>⚫</span>
+        <span class="status-info" id="statusMsg">Ready — write or paste code, then hit Convert</span>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════ SQL PAGE ══════════════════════════════ -->
+    <div class="page" id="page-sql">
+      <div class="page-header">
+        <div>
+          <h2>🗄 SQL → MySQL Converter</h2>
+          <p>Convert standard SQL queries to MySQL-compatible syntax — Frontend Demo</p>
+        </div>
+        <span class="mock-badge">MOCK DEMO</span>
+      </div>
+      <div class="sql-page">
+        <div class="feature-panel">
+          <div class="feature-header">
+            <div class="feature-title">📝 Input SQL</div>
+          </div>
+          <div class="feature-body">
+            <textarea class="sql-input" id="sqlInput" placeholder="Enter your SQL query here...
+Example:
+SELECT TOP 10 name, age FROM users
+WHERE age > 18
+ORDER BY name;">SELECT TOP 10 name, age
+FROM users
+WHERE age > 18
+  AND status = 'active'
+ORDER BY name ASC;</textarea>
+            <div class="action-row">
+              <button class="feature-btn btn-primary" onclick="convertSQL()">🔄 Convert to MySQL</button>
+              <button class="feature-btn btn-secondary" onclick="loadSQLSample()">📋 Load Sample</button>
+              <button class="feature-btn btn-secondary" onclick="clearSQL()">🗑 Clear</button>
+            </div>
+          </div>
+        </div>
+        <div class="feature-panel">
+          <div class="feature-header">
+            <div class="feature-title">✅ MySQL Output <span class="mock-badge">DEMO</span></div>
+            <button class="icon-btn" onclick="copySQLOutput()">⎘ Copy</button>
+          </div>
+          <div class="feature-body">
+            <div class="output-box" id="sqlOutput">Converted MySQL query will appear here...</div>
+            <div style="margin-top:10px;font-size:.75rem;color:var(--text3)">
+              💡 Conversions: TOP→LIMIT, ISNULL→IFNULL, NVL→IFNULL, GETDATE→NOW(), string concat, and more.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════ TS PAGE ══════════════════════════════ -->
+    <div class="page" id="page-ts">
+      <div class="page-header">
+        <div>
+          <h2>📘 TypeScript → JavaScript Converter</h2>
+          <p>Strip TypeScript types and convert to plain JavaScript — Frontend Demo</p>
+        </div>
+        <span class="mock-badge">MOCK DEMO</span>
+      </div>
+      <div class="ts-page">
+        <div class="feature-panel">
+          <div class="feature-header">
+            <div class="feature-title">📘 TypeScript Input</div>
+          </div>
+          <div class="feature-body">
+            <textarea class="ts-input" id="tsInput" placeholder="Enter TypeScript code here...">interface User {
+  id: number;
+  name: string;
+  email: string;
+}
+
+function greet(user: User): string {
+  return `Hello, ${user.name}!`;
+}
+
+const users: User[] = [
+  { id: 1, name: "Alice", email: "alice@example.com" },
+  { id: 2, name: "Bob",   email: "bob@example.com"   }
+];
+
+const names: string[] = users.map((u: User) => u.name);
+console.log(names);</textarea>
+            <div class="action-row">
+              <button class="feature-btn btn-primary" onclick="convertTS()">🔄 Strip Types → JS</button>
+              <button class="feature-btn btn-secondary" onclick="loadTSSample()">📋 Load Sample</button>
+              <button class="feature-btn btn-secondary" onclick="clearTS()">🗑 Clear</button>
+            </div>
+          </div>
+        </div>
+        <div class="feature-panel">
+          <div class="feature-header">
+            <div class="feature-title">🟨 JavaScript Output <span class="mock-badge">DEMO</span></div>
+            <button class="icon-btn" onclick="copyTSOutput()">⎘ Copy</button>
+          </div>
+          <div class="feature-body">
+            <div class="output-box" id="tsOutput">Converted JavaScript will appear here...</div>
+            <div style="margin-top:10px;font-size:.75rem;color:var(--text3)">
+              💡 Removes: interfaces, type annotations, generics, enums (converted), access modifiers.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════ AST PAGE ══════════════════════════════ -->
+    <div class="page" id="page-ast">
+      <div class="page-header">
+        <div>
+          <h2>🌳 AST Visualizer</h2>
+          <p>Abstract Syntax Tree visualization for code analysis — Frontend Demo</p>
+        </div>
+        <span class="mock-badge">MOCK DEMO</span>
+      </div>
+      <div class="ast-page">
+        <div class="feature-panel">
+          <div class="feature-header">
+            <div class="feature-title">📝 Code Input</div>
+          </div>
+          <div class="feature-body">
+            <select class="lang-select" id="astLang" style="margin-bottom:10px;width:100%">
+              <option value="c">C</option>
+              <option value="python">Python</option>
+              <option value="cpp">C++</option>
+            </select>
+            <textarea class="sql-input" id="astInput" style="min-height:160px">int factorial(int n) {
+    if (n <= 1) return 1;
+    return n * factorial(n - 1);
+}
+
+int main() {
+    int result = factorial(5);
+    printf("%d\n", result);
+    return 0;
+}</textarea>
+            <div class="action-row">
+              <button class="feature-btn btn-primary" onclick="generateAST()">🌳 Generate AST</button>
+              <button class="feature-btn btn-secondary" onclick="loadASTSample()">📋 Load Sample</button>
+              <button class="feature-btn btn-secondary" onclick="expandAll()">+ Expand All</button>
+              <button class="feature-btn btn-secondary" onclick="collapseAll()">− Collapse All</button>
+            </div>
+            <div style="margin-top:10px;font-size:.75rem;color:var(--text3)">
+              ℹ️ Shows a structured AST representation of your code. Click nodes to expand/collapse.
+            </div>
+          </div>
+        </div>
+        <div class="feature-panel">
+          <div class="feature-header">
+            <div class="feature-title">🌳 AST Tree <span class="mock-badge">DEMO</span></div>
+            <button class="icon-btn" onclick="copyAST()">⎘ Copy JSON</button>
+          </div>
+          <div class="feature-body" style="padding:0">
+            <div class="ast-tree" id="astOutput" style="border:none;border-radius:0">
+              <div style="color:var(--text3);padding:12px">Click "Generate AST" to visualize the tree...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /main -->
+
+  <!-- Mobile tab bar -->
+  <div class="mobile-tabs">
+    <button class="mobile-tab active" onclick="showPage('transpiler',this)">
+      <span class="mobile-tab-icon">⚡</span>Convert
+    </button>
+    <button class="mobile-tab" onclick="showPage('sql',this)">
+      <span class="mobile-tab-icon">🗄</span>SQL
+    </button>
+    <button class="mobile-tab" onclick="showPage('ts',this)">
+      <span class="mobile-tab-icon">📘</span>TS→JS
+    </button>
+    <button class="mobile-tab" onclick="showPage('ast',this)">
+      <span class="mobile-tab-icon">🌳</span>AST
+    </button>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast" style="display:none">
+    <span class="toast-icon" id="toastIcon">✅</span>
+    <span id="toastMsg">Copied!</span>
+  </div>
+
+<script>
+// ─────────────────────────────────────────────
+// EDITOR SETUP
+// ─────────────────────────────────────────────
+
+let srcEditor, outEditor;
+let isDark = true;
+let currentASTData = null;
+
+window.addEventListener('DOMContentLoaded', () => {
+  srcEditor = CodeMirror.fromTextArea(document.getElementById('sourceEditor'), {
+    mode: 'text/x-csrc',
+    theme: 'dracula',
+    lineNumbers: true,
+    indentUnit: 4,
+    tabSize: 4,
+    lineWrapping: true,
+    autofocus: true,
+    extraKeys: { 'Ctrl-Enter': doConvert }
+  });
+  outEditor = CodeMirror.fromTextArea(document.getElementById('outputEditor'), {
+    mode: 'text/x-python',
+    theme: 'dracula',
+    lineNumbers: true,
+    readOnly: true,
+    indentUnit: 4,
+    tabSize: 4,
+    lineWrapping: true,
+  });
+
+  srcEditor.setValue(`#include <stdio.h>
+
+int factorial(int n) {
+    if (n <= 1) {
+        return 1;
+    }
+    return n * factorial(n - 1);
+}
+
+int main() {
+    int i;
+    for (i = 1; i <= 5; i++) {
+        printf("factorial(%d) = %d\\n", i, factorial(i));
+    }
+    return 0;
+}`);
+
+  srcEditor.on('change', () => {
+    setStatus('info', '● Unsaved changes — hit Convert (Ctrl+Enter)');
+  });
+
+  updateLangIcons();
+});
+
+// ─────────────────────────────────────────────
+// NAVIGATION
+// ─────────────────────────────────────────────
+
+function showPage(id, btn) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-' + id).classList.add('active');
+  // desktop tabs
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  // mobile tabs
+  document.querySelectorAll('.mobile-tab').forEach(t => t.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+}
+
+// ─────────────────────────────────────────────
+// THEME
+// ─────────────────────────────────────────────
+
+function toggleTheme() {
+  isDark = !isDark;
+  document.body.classList.toggle('light', !isDark);
+  const theme = isDark ? 'dracula' : 'eclipse';
+  srcEditor.setOption('theme', theme);
+  outEditor.setOption('theme', theme);
+  document.getElementById('themeBtn').textContent = isDark ? '🌙' : '☀️';
+}
+
+// ─────────────────────────────────────────────
+// LANG UTILS
+// ─────────────────────────────────────────────
+
+const LANG_ICONS = { c:'🔵', cpp:'🟣', python:'🐍' };
+const LANG_NAMES = { c:'C', cpp:'C++', python:'Python' };
+const LANG_MODES = { c:'text/x-csrc', cpp:'text/x-c++src', python:'text/x-python' };
+const LANG_EXTS = { c:'.c', cpp:'.cpp', python:'.py' };
+
+function updateLangIcons() {
+  const sl = document.getElementById('srcLang').value;
+  const tl = document.getElementById('tgtLang').value;
+  document.getElementById('srcIcon').textContent = LANG_ICONS[sl];
+  document.getElementById('tgtIcon').textContent = LANG_ICONS[tl];
+  document.getElementById('srcPanelTitle').textContent = `SOURCE — ${LANG_NAMES[sl]}`;
+  document.getElementById('tgtPanelTitle').textContent = `OUTPUT — ${LANG_NAMES[tl]}`;
+  if (srcEditor) srcEditor.setOption('mode', LANG_MODES[sl]);
+  if (outEditor) outEditor.setOption('mode', LANG_MODES[tl]);
+}
+
+function swapLangs() {
+  const sl = document.getElementById('srcLang');
+  const tl = document.getElementById('tgtLang');
+  const tmp = sl.value;
+  sl.value = tl.value;
+  // Find matching option
+  const opts = Array.from(tl.options).map(o => o.value);
+  if (opts.includes(tmp)) tl.value = tmp;
+  updateLangIcons();
+  // Swap code
+  const srcCode = srcEditor.getValue();
+  const outCode = outEditor.getValue();
+  srcEditor.setValue(outCode);
+  outEditor.setValue('');
+  setStatus('info', '⇄ Languages swapped');
+}
+
+// ─────────────────────────────────────────────
+// CONVERT
+// ─────────────────────────────────────────────
+
+async function doConvert() {
+  const code = srcEditor.getValue().trim();
+  if (!code) { setStatus('err', '⚠ No source code to convert'); return; }
+  const sl = document.getElementById('srcLang').value;
+  const tl = document.getElementById('tgtLang').value;
+  if (sl === tl) { setStatus('err', '⚠ Source and target languages are the same'); return; }
+
+  setBtnLoading(true);
+  setStatus('info', '⏳ Converting...');
+  outEditor.setValue('');
+
+  try {
+    const resp = await fetch('http://localhost:5000/convert', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source_code: code, source_lang: sl, target_lang: tl }),
+      signal: AbortSignal.timeout(10000)
+    });
+    const data = await resp.json();
+    if (data.error) {
+      setStatus('err', '✕ ' + data.error);
+      outEditor.setValue(`/* Error: ${data.error} */`);
+    } else {
+      outEditor.setValue(data.converted_code);
+      setStatus('ok', `✓ Converted ${LANG_NAMES[sl]} → ${LANG_NAMES[tl]} successfully`);
+      showToast('✅', 'Conversion complete!');
+    }
+  } catch (e) {
+    // Fallback: client-side transpiler
+    const result = clientTranspile(code, sl, tl);
+    outEditor.setValue(result);
+    setStatus('ok', `✓ Converted (client-side fallback) — Start backend for full accuracy`);
+    showToast('⚡', 'Converted via client-side engine');
+  } finally {
+    setBtnLoading(false);
+  }
+}
+
+// ─────────────────────────────────────────────
+// CLIENT-SIDE TRANSPILER (fallback)
+// ─────────────────────────────────────────────
+
+function clientTranspile(code, srcLang, tgtLang) {
+  if ((srcLang === 'c' || srcLang === 'cpp') && tgtLang === 'python') {
+    return cToPython(code);
+  } else if (srcLang === 'python' && (tgtLang === 'c' || tgtLang === 'cpp')) {
+    return pythonToC(code, tgtLang);
+  }
+  return `# Conversion from ${srcLang} to ${tgtLang} not supported client-side.\n# Please start the backend server.`;
+}
+
+function cToPython(code) {
+  const lines = code.split('\n');
+  const result = [];
+  let indent = 0;
+
+  const filtered = lines.filter(l =>
+    !l.trim().match(/^#\s*(include|define|pragma)/) &&
+    !l.trim().match(/^using\s+namespace/)
+  );
+
+  for (let i = 0; i < filtered.length; i++) {
+    let line = filtered[i];
+    let s = line.trim();
+    if (!s) { result.push(''); continue; }
+    s = s.replace(/\/\/.*/, '').trim();
+    if (!s) continue;
+
+    const pad = '    '.repeat(indent);
+
+    if (s === '{' || s === '}' || s === '};') {
+      if (s.includes('}')) indent = Math.max(0, indent - 1);
+      continue;
+    }
+    if (s.startsWith('}')) {
+      indent = Math.max(0, indent - 1);
+      const rest = s.slice(1).trim();
+      if (rest.startsWith('else if')) {
+        const m = rest.match(/else\s+if\s*\((.+)\)/);
+        if (m) { result.push('    '.repeat(indent) + `elif ${convertCond(m[1])}:`); indent++; }
+      } else if (rest.startsWith('else')) {
+        result.push('    '.repeat(indent) + 'else:'); indent++;
+      }
+      continue;
+    }
+
+    // Function
+    const fnM = s.match(/^(?:int|void|float|double|char|bool|string)\s+(\w+)\s*\(([^)]*)\)\s*\{?/);
+    if (fnM && !s.match(/^(if|while|for|else)/)) {
+      const fname = fnM[1];
+      const params = convertParams(fnM[2]);
+      result.push(pad + (fname === 'main' ? 'def main():' : `def ${fname}(${params}):`));
+      indent++;
+      continue;
+    }
+
+    const elifM = s.match(/^else\s+if\s*\((.+)\)\s*\{?/);
+    if (elifM) { result.push(pad + `elif ${convertCond(elifM[1])}:`); indent++; continue; }
+
+    const ifM = s.match(/^if\s*\((.+)\)\s*\{?/);
+    if (ifM) { result.push(pad + `if ${convertCond(ifM[1])}:`); indent++; continue; }
+
+    if (s.match(/^else\s*\{?/)) {
+      indent = Math.max(0, indent - 1);
+      result.push('    '.repeat(indent) + 'else:');
+      indent++;
+      continue;
+    }
+
+    const forM = s.match(/^for\s*\(([^;]*);([^;]*);([^)]*)\)\s*\{?/);
+    if (forM) {
+      result.push(pad + convertForLoop(forM[1].trim(), forM[2].trim(), forM[3].trim()));
+      indent++; continue;
+    }
+
+    const whileM = s.match(/^while\s*\((.+)\)\s*\{?/);
+    if (whileM) { result.push(pad + `while ${convertCond(whileM[1])}:`); indent++; continue; }
+
+    const coutLine = convertCout(s);
+    if (coutLine) { result.push(pad + coutLine); continue; }
+
+    const printfLine = convertPrintf(s);
+    if (printfLine) { result.push(pad + printfLine); continue; }
+
+    const cinLine = convertCin(s);
+    if (cinLine) { result.push(pad + cinLine); continue; }
+
+    const retM = s.match(/^return\s+(.*?);?$/);
+    if (retM) { result.push(pad + `return ${retM[1].replace(/;$/, '')}`); continue; }
+
+    const varM = s.match(/^(?:int|float|double|char|bool|long|short|string|auto)\s+(.+?);?$/);
+    if (varM) {
+      const v = convertVarDecl(varM[1]);
+      if (v) { result.push(pad + v); continue; }
+    }
+
+    const clean = s.replace(/;$/, '');
+    result.push(pad + convertCond(clean));
+  }
+
+  if (result.some(l => l.includes('def main():'))) {
+    result.push('', "if __name__ == '__main__':", '    main()');
+  }
+  return result.join('\n');
+}
+
+function convertCond(c) {
+  return c.replace(/&&/g, 'and').replace(/\|\|/g, 'or')
+    .replace(/(?<![=!<>])!(?!=)/g, 'not ')
+    .replace(/\bNULL\b/g, 'None').replace(/\btrue\b/g, 'True').replace(/\bfalse\b/g, 'False');
+}
+
+function convertParams(raw) {
+  if (!raw || raw.trim() === 'void') return '';
+  return raw.split(',').map(p => {
+    const parts = p.trim().split(/\s+/);
+    return parts[parts.length - 1].replace(/[*&]/g, '');
+  }).join(', ');
+}
+
+function convertForLoop(init, cond, incr) {
+  const im = init.match(/(?:int\s+)?(\w+)\s*=\s*(\d+)/);
+  const cm = cond.match(/(\w+)\s*([<>]=?)\s*(.+)/);
+  const rm = incr.match(/(\w+)\s*(\+\+|--|[+\-]=\s*\d+)/);
+  if (im && cm && rm) {
+    const v = im[1], s = im[2], op = cm[2], end = cm[3].trim();
+    let step = 1;
+    if (rm[2] === '--') step = -1;
+    else if (rm[2].includes('+=')) step = parseInt(rm[2].replace('+=','').trim()) || 1;
+    else if (rm[2].includes('-=')) step = -(parseInt(rm[2].replace('-=','').trim()) || 1);
+    const rend = op === '<' ? end : op === '<=' ? `${end} + 1` : end;
+    return step === 1 ? `for ${v} in range(${s}, ${rend}):` : `for ${v} in range(${s}, ${rend}, ${step}):`;
+  }
+  return `# for (${init}; ${cond}; ${incr}):`;
+}
+
+function convertCout(line) {
+  if (!/\bcout\b/.test(line)) return null;
+  line = line.replace(/\bcout\s*/,'').replace(/\s*<<\s*endl\s*/g,'').replace(/\s*<<\s*"\\n"\s*/g,'');
+  line = line.replace(/;$/,'').trim();
+  const parts = line.split(/\s*<<\s*/).filter(Boolean);
+  return `print(${parts.join(', ')})`;
+}
+
+function convertPrintf(line) {
+  const m = line.match(/printf\s*\((.+)\)\s*;?$/s);
+  if (!m) return null;
+  const args = m[1].trim();
+  const fm = args.match(/"((?:[^"\\]|\\.)*)"\s*,?\s*(.*)/);
+  if (fm) {
+    let fmt = fm[1].replace(/\\n/g,'').replace(/%[dfisc]/g,'{}');
+    const rest = fm[2].split(',').map(s=>s.trim()).filter(Boolean);
+    return rest.length ? `print("${fmt}".format(${rest.join(', ')}))` : `print("${fmt}")`;
+  }
+  return `print(${args})`;
+}
+
+function convertCin(line) {
+  if (!/\bcin\b/.test(line)) return null;
+  const vars = line.replace(/\bcin\s*/,'').replace(/;$/,'').split('>>').map(v=>v.trim()).filter(Boolean);
+  return vars.length === 1 ? `${vars[0]} = int(input())` : `${vars.join(', ')} = map(int, input().split())`;
+}
+
+function convertVarDecl(body) {
+  if (body.includes('=')) {
+    const [vr, ...rest] = body.split('=');
+    const val = rest.join('=').trim().replace(/;$/,'')
+      .replace(/\bNULL\b/g,'None').replace(/\btrue\b/g,'True').replace(/\bfalse\b/g,'False');
+    return `${vr.trim().replace(/[*]/g,'')} = ${val}`;
+  }
+  const vars = body.split(',').map(v => v.trim().replace(/[*]/g,''));
+  return `${vars.join(', ')} = ${'0, '.repeat(vars.length).replace(/, $/,'')}`;
+}
+
+function pythonToC(code, tgt) {
+  const isCpp = tgt === 'cpp';
+  const lines = code.split('\n');
+  const result = [];
+
+  if (isCpp) {
+    result.push('#include <iostream>', '#include <string>', 'using namespace std;', '');
+  } else {
+    result.push('#include <stdio.h>', '#include <stdlib.h>', '#include <string.h>', '');
+  }
+
+  const indentStack = [0];
+  let i = 0;
+
+  while (i < lines.length) {
+    const raw = lines[i];
+    const s = raw.trim();
+    const curInd = raw.length - raw.trimStart().length;
+    if (!s) { result.push(''); i++; continue; }
+    if (s.match(/^(import|from)\s/)) { i++; continue; }
+
+    while (indentStack.length > 1 && curInd < indentStack[indentStack.length - 1]) {
+      indentStack.pop();
+      result.push('    '.repeat(indentStack.length - 1) + '}');
+    }
+    const depth = indentStack.length - 1;
+    const pad = '    '.repeat(depth);
+
+    if (s.startsWith('#')) { result.push(pad + '// ' + s.slice(1).trim()); i++; continue; }
+
+    const defM = s.match(/^def\s+(\w+)\s*\(([^)]*)\)\s*:/);
+    if (defM) {
+      const fn = defM[1], params = defM[2].trim();
+      const cParams = params ? params.split(',').map(p=>`int ${p.trim()}`).join(', ') : (isCpp?'':'void');
+      result.push(pad + (fn === 'main' ? 'int main() {' : `void ${fn}(${cParams}) {`));
+      indentStack.push(curInd + 4); i++; continue;
+    }
+
+    const elifM = s.match(/^elif\s+(.+):/);
+    if (elifM) {
+      result.push('    '.repeat(depth - 1) + `} else if (${pyCond(elifM[1])}) {`);
+      indentStack.push(curInd + 4); i++; continue;
+    }
+
+    const ifM = s.match(/^if\s+(.+):/);
+    if (ifM) { result.push(pad + `if (${pyCond(ifM[1])}) {`); indentStack.push(curInd+4); i++; continue; }
+
+    if (s.match(/^else\s*:/)) {
+      result.push('    '.repeat(depth - 1) + '} else {');
+      indentStack.push(curInd + 4); i++; continue;
+    }
+
+    const forM = s.match(/^for\s+(\w+)\s+in\s+range\((.+)\)\s*:/);
+    if (forM) {
+      const [v, rng] = [forM[1], forM[2].trim()];
+      const parts = rng.split(',').map(p=>p.trim());
+      if (parts.length === 1) result.push(pad + `for (int ${v} = 0; ${v} < ${parts[0]}; ${v}++) {`);
+      else if (parts.length === 2) result.push(pad + `for (int ${v} = ${parts[0]}; ${v} < ${parts[1]}; ${v}++) {`);
+      else result.push(pad + `for (int ${v} = ${parts[0]}; ${v} < ${parts[1]}; ${v} += ${parts[2]}) {`);
+      indentStack.push(curInd+4); i++; continue;
+    }
+
+    const whileM = s.match(/^while\s+(.+):/);
+    if (whileM) { result.push(pad + `while (${pyCond(whileM[1])}) {`); indentStack.push(curInd+4); i++; continue; }
+
+    const printM = s.match(/^print\s*\((.+)\)\s*$/);
+    if (printM) {
+      const args = printM[1].trim();
+      if (isCpp) result.push(pad + `cout << ${args.split(',').map(a=>a.trim()).join(' << ')} << endl;`);
+      else result.push(pad + pyPrintToC(args));
+      i++; continue;
+    }
+
+    const inputM = s.match(/^(\w+)\s*=\s*(?:int\s*\(\s*)?input\s*\(([^)]*)\)\s*\)?/);
+    if (inputM) {
+      const [, v, prompt] = inputM;
+      const p = prompt.trim().replace(/['"]/g, '');
+      if (isCpp) {
+        result.push(pad + `int ${v};`);
+        if (p) result.push(pad + `cout << "${p}";`);
+        result.push(pad + `cin >> ${v};`);
+      } else {
+        result.push(pad + `int ${v};`);
+        if (p) result.push(pad + `printf("${p}");`);
+        result.push(pad + `scanf("%d", &${v});`);
+      }
+      i++; continue;
+    }
+
+    const retM = s.match(/^return\s*(.*)/);
+    if (retM) { result.push(pad + `return ${retM[1]};`); i++; continue; }
+
+    if (s === 'pass') { result.push(pad + '// pass'); i++; continue; }
+
+    const asgM = s.match(/^(\w+)\s*=\s*(.+)/);
+    if (asgM && !s.match(/^(if|while|for|def|class)/)) {
+      const v = asgM[1], val = pyCond(asgM[2]);
+      const t = /^\d+$/.test(val) ? 'int' : /^\d+\.\d+/.test(val) ? 'float' : (isCpp ? 'string' : 'char*');
+      result.push(pad + `${t} ${v} = ${val};`);
+      i++; continue;
+    }
+
+    result.push(pad + pyCond(s) + ';');
+    i++;
+  }
+
+  while (indentStack.length > 1) {
+    indentStack.pop();
+    result.push('    '.repeat(indentStack.length - 1) + '}');
+  }
+
+  // Add return 0 to main
+  const code_str = result.join('\n');
+  if (code_str.includes('int main()') && !code_str.includes('return 0')) {
+    const ls = result;
+    for (let j = ls.length - 1; j >= 0; j--) {
+      if (ls[j].trim() === '}') { ls.splice(j, 0, '    return 0;'); break; }
+    }
+  }
+
+  return result.join('\n');
+}
+
+function pyCond(c) {
+  return c.replace(/\band\b/g,'&&').replace(/\bor\b/g,'||')
+    .replace(/\bnot\s+/g,'!').replace(/\bTrue\b/g,'1')
+    .replace(/\bFalse\b/g,'0').replace(/\bNone\b/g,'NULL');
+}
+
+function pyPrintToC(args) {
+  const parts = args.split(',').map(a => a.trim());
+  if (parts.length === 1) {
+    const p = parts[0];
+    if (p.startsWith('"') || p.startsWith("'")) return `printf("${p.replace(/^['"]|['"]$/g, '')}\\n");`;
+    return `printf("%d\\n", ${p});`;
+  }
+  const fmtParts = [], vals = [];
+  parts.forEach(p => {
+    if (p.startsWith('"') || p.startsWith("'")) fmtParts.push(p.replace(/^['"]|['"]$/g,''));
+    else { fmtParts.push('%d'); vals.push(p); }
+  });
+  return vals.length ? `printf("${fmtParts.join(' ')}\\n", ${vals.join(', ')});` : `printf("${fmtParts.join(' ')}\\n");`;
+}
+
+// ─────────────────────────────────────────────
+// SAMPLES
+// ─────────────────────────────────────────────
+
+function loadSample() {
+  const sl = document.getElementById('srcLang').value;
+  const samples = {
+    c: `#include <stdio.h>
+
+int factorial(int n) {
+    if (n <= 1) {
+        return 1;
+    }
+    return n * factorial(n - 1);
+}
+
+int main() {
+    int i;
+    for (i = 1; i <= 5; i++) {
+        printf("factorial(%d) = %d\\n", i, factorial(i));
+    }
+    return 0;
+}`,
+    cpp: `#include <iostream>
+using namespace std;
+
+int add(int a, int b) {
+    return a + b;
+}
+
+int main() {
+    int x = 10;
+    int y = 20;
+    int result = add(x, y);
+    cout << "Sum: " << result << endl;
+
+    for (int i = 0; i < 5; i++) {
+        cout << "i = " << i << endl;
+    }
+    return 0;
+}`,
+    python: `def fibonacci(n):
+    if n <= 1:
+        return n
+    a = 0
+    b = 1
+    for i in range(2, n + 1):
+        c = a + b
+        a = b
+        b = c
+    return b
+
+def main():
+    for i in range(10):
+        result = fibonacci(i)
+        print(i, result)
+
+if __name__ == '__main__':
+    main()`
+  };
+  srcEditor.setValue(samples[sl] || samples.c);
+  outEditor.setValue('');
+  setStatus('info', '📋 Sample loaded — hit Convert');
+}
+
+function clearAll() {
+  srcEditor.setValue('');
+  outEditor.setValue('');
+  setStatus('info', 'Cleared');
+}
+
+// ─────────────────────────────────────────────
+// COPY / DOWNLOAD
+// ─────────────────────────────────────────────
+
+function copySource() {
+  navigator.clipboard.writeText(srcEditor.getValue());
+  showToast('⎘', 'Source code copied!');
+}
+
+function copyOutput() {
+  const txt = outEditor.getValue();
+  if (!txt) { showToast('⚠️', 'Nothing to copy'); return; }
+  navigator.clipboard.writeText(txt);
+  showToast('⎘', 'Output copied!');
+}
+
+function downloadOutput() {
+  const txt = outEditor.getValue();
+  if (!txt) { showToast('⚠️', 'Nothing to download'); return; }
+  const tl = document.getElementById('tgtLang').value;
+  const ext = LANG_EXTS[tl] || '.txt';
+  const blob = new Blob([txt], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `converted${ext}`;
+  a.click();
+  showToast('⬇', 'File downloaded!');
+}
+
+// ─────────────────────────────────────────────
+// UI UTILS
+// ─────────────────────────────────────────────
+
+function setStatus(type, msg) {
+  const el = document.getElementById('statusMsg');
+  el.className = type === 'ok' ? 'status-ok' : type === 'err' ? 'status-err' : 'status-info';
+  el.textContent = msg;
+}
+
+function setBtnLoading(loading) {
+  const btn = document.getElementById('convertBtn');
+  btn.disabled = loading;
+  document.getElementById('btnIcon').innerHTML = loading ? '<span class="spinner"></span>' : '⚡';
+  document.getElementById('btnText').textContent = loading ? 'Converting...' : 'Convert';
+}
+
+let toastTimer;
+function showToast(icon, msg) {
+  clearTimeout(toastTimer);
+  const t = document.getElementById('toast');
+  document.getElementById('toastIcon').textContent = icon;
+  document.getElementById('toastMsg').textContent = msg;
+  t.style.display = 'flex';
+  toastTimer = setTimeout(() => t.style.display = 'none', 2500);
+}
+
+// ─────────────────────────────────────────────
+// SQL CONVERTER (MOCK)
+// ─────────────────────────────────────────────
+
+function convertSQL() {
+  let sql = document.getElementById('sqlInput').value.trim();
+  if (!sql) { document.getElementById('sqlOutput').textContent = '⚠ No input provided.'; return; }
+
+  // Mock conversion rules
+  sql = sql.replace(/SELECT\s+TOP\s+(\d+)/gi, 'SELECT');
+  sql += sql.includes('LIMIT') ? '' : '\nLIMIT ' + (sql.match(/TOP\s+(\d+)/i)?.[1] || '10');
+  sql = sql.replace(/\bISNULL\s*\(([^,]+),([^)]+)\)/gi, 'IFNULL($1,$2)');
+  sql = sql.replace(/\bNVL\s*\(([^,]+),([^)]+)\)/gi, 'IFNULL($1,$2)');
+  sql = sql.replace(/\bGETDATE\s*\(\)/gi, 'NOW()');
+  sql = sql.replace(/\bSYSDATE\b/gi, 'NOW()');
+  sql = sql.replace(/\bDATEADD\s*\((\w+),\s*([^,]+),\s*([^)]+)\)/gi, 'DATE_ADD($3, INTERVAL $2 $1)');
+  sql = sql.replace(/\bDATEDIFF\s*\((\w+),\s*([^,]+),\s*([^)]+)\)/gi, 'DATEDIFF($3, $2)');
+  sql = sql.replace(/\+\s*'|'\s*\+/g, ', ');
+  sql = sql.replace(/\bCONCAT\b/gi, 'CONCAT');
+  sql = sql.replace(/\bCHARINDEX\s*\(([^,]+),([^)]+)\)/gi, 'LOCATE($1,$2)');
+  sql = sql.replace(/\bLEN\s*\(/gi, 'LENGTH(');
+  sql = sql.replace(/\bSUBSTRING\s*\(/gi, 'SUBSTRING(');
+  sql = sql.replace(/\bCAST\s*\(([^)]+)\s+AS\s+NVARCHAR([^)]*)\)/gi, 'CAST($1 AS CHAR)');
+  sql = sql.replace(/\bNVARCHAR/gi, 'VARCHAR');
+  sql = sql.replace(/\bBIT\b/gi, 'TINYINT(1)');
+  sql = sql.replace(/\bIDENTITY\s*\([^)]*\)/gi, 'AUTO_INCREMENT');
+  sql = sql.replace(/\[(\w+)\]/g, '`$1`');
+  sql = sql.replace(/\bNOLOCK\b/gi, '').replace(/\bWITH\s*\([^)]*\)/gi, '');
+  sql = sql.replace(/^\s*\n/gm, '');
+
+  document.getElementById('sqlOutput').textContent = '-- MySQL Compatible Query\n\n' + sql;
+  showToast('✅', 'SQL converted!');
+}
+
+function loadSQLSample() {
+  document.getElementById('sqlInput').value = `SELECT TOP 20 u.id, u.name, u.email,
+    ISNULL(u.phone, 'N/A') AS phone,
+    DATEDIFF(day, u.created_at, GETDATE()) AS days_since_join
+FROM [dbo].[users] u WITH (NOLOCK)
+WHERE u.age > 18
+  AND u.status = 'active'
+  AND CHARINDEX('@', u.email) > 0
+ORDER BY u.name ASC;`;
+}
+
+function clearSQL() {
+  document.getElementById('sqlInput').value = '';
+  document.getElementById('sqlOutput').textContent = '';
+}
+
+function copySQLOutput() {
+  navigator.clipboard.writeText(document.getElementById('sqlOutput').textContent);
+  showToast('⎘', 'SQL output copied!');
+}
+
+// ─────────────────────────────────────────────
+// TYPESCRIPT → JS (MOCK)
+// ─────────────────────────────────────────────
+
+function convertTS() {
+  let ts = document.getElementById('tsInput').value.trim();
+  if (!ts) { document.getElementById('tsOutput').textContent = '⚠ No input provided.'; return; }
+
+  // Mock conversion: remove TypeScript-specific syntax
+  // Remove interface declarations
+  ts = ts.replace(/interface\s+\w+\s*\{[^}]*\}/gs, (match) => '// (interface removed)\n');
+  // Remove type aliases
+  ts = ts.replace(/type\s+\w+\s*=\s*[^;]+;/g, '');
+  // Remove generic type params: <T>, <User>, etc.
+  ts = ts.replace(/<[A-Z]\w*(?:\[\])?>/g, '');
+  // Remove type annotations in function params: (user: User) → (user)
+  ts = ts.replace(/(\w+)\s*:\s*(?:\w+(?:\[\])?(?:\s*\|\s*\w+)*)/g, '$1');
+  // Remove return type annotations: ): string {
+  ts = ts.replace(/\)\s*:\s*\w+(?:\[\])?\s*\{/g, ') {');
+  ts = ts.replace(/\)\s*:\s*void\s*\{/g, ') {');
+  // Remove access modifiers
+  ts = ts.replace(/\b(public|private|protected|readonly)\s+/g, '');
+  // Remove enum and convert to object
+  ts = ts.replace(/enum\s+(\w+)\s*\{([^}]*)\}/gs, (_, name, body) => {
+    const members = body.split(',').map((m, i) => {
+      const parts = m.trim().split('=');
+      return `  ${parts[0].trim()}: ${parts[1] ? parts[1].trim() : i}`;
+    });
+    return `const ${name} = {\n${members.join(',\n')}\n};`;
+  });
+  // Remove "as Type" casts
+  ts = ts.replace(/\s+as\s+\w+(?:\[\])?/g, '');
+  // Remove generic function syntax: function foo<T>( → function foo(
+  ts = ts.replace(/function\s+(\w+)\s*<[^>]+>/g, 'function $1');
+  // Remove const/let type annotations
+  ts = ts.replace(/(const|let|var)\s+(\w+)\s*:\s*\w+(?:\[\])?\s*=/g, '$1 $2 =');
+  // Clean multiple blank lines
+  ts = ts.replace(/\n{3,}/g, '\n\n');
+
+  document.getElementById('tsOutput').textContent = '// Generated JavaScript\n\n' + ts.trim();
+  showToast('✅', 'TypeScript stripped!');
+}
+
+function loadTSSample() {
+  document.getElementById('tsInput').value = `enum Direction {
+  Up,
+  Down,
+  Left,
+  Right
+}
+
+type Point = { x: number; y: number };
+
+interface Shape {
+  id: number;
+  color: string;
+  area(): number;
+}
+
+class Circle implements Shape {
+  public id: number;
+  private radius: number;
+  readonly color: string;
+
+  constructor(id: number, radius: number, color: string) {
+    this.id = id;
+    this.radius = radius;
+    this.color = color;
+  }
+
+  area(): number {
+    return Math.PI * this.radius ** 2;
+  }
+}
+
+function getArea<T extends Shape>(shape: T): number {
+  return shape.area();
+}
+
+const c = new Circle(1, 5, "red");
+console.log(getArea(c) as number);`;
+}
+
+function clearTS() {
+  document.getElementById('tsInput').value = '';
+  document.getElementById('tsOutput').textContent = '';
+}
+
+function copyTSOutput() {
+  navigator.clipboard.writeText(document.getElementById('tsOutput').textContent);
+  showToast('⎘', 'JS output copied!');
+}
+
+// ─────────────────────────────────────────────
+// AST VIEWER (MOCK)
+// ─────────────────────────────────────────────
+
+const AST_SAMPLES = {
+  c: {
+    type: 'Program',
+    language: 'C',
+    body: [
+      {
+        type: 'FunctionDeclaration',
+        name: 'factorial',
+        returnType: 'int',
+        params: [{ type: 'Parameter', name: 'n', dataType: 'int' }],
+        body: [
+          {
+            type: 'IfStatement',
+            condition: { type: 'BinaryExpression', operator: '<=', left: { type: 'Identifier', name: 'n' }, right: { type: 'Literal', value: 1 } },
+            consequent: [{ type: 'ReturnStatement', value: { type: 'Literal', value: 1 } }]
+          },
+          {
+            type: 'ReturnStatement',
+            value: { type: 'BinaryExpression', operator: '*', left: { type: 'Identifier', name: 'n' }, right: { type: 'CallExpression', callee: 'factorial', args: [{ type: 'BinaryExpression', operator: '-', left: { type: 'Identifier', name: 'n' }, right: { type: 'Literal', value: 1 } }] } }
+          }
+        ]
+      },
+      {
+        type: 'FunctionDeclaration',
+        name: 'main',
+        returnType: 'int',
+        params: [],
+        body: [
+          { type: 'VariableDeclaration', dataType: 'int', name: 'result', init: { type: 'CallExpression', callee: 'factorial', args: [{ type: 'Literal', value: 5 }] } },
+          { type: 'ExpressionStatement', expression: { type: 'CallExpression', callee: 'printf', args: [{ type: 'Literal', value: '"%d\\n"' }, { type: 'Identifier', name: 'result' }] } },
+          { type: 'ReturnStatement', value: { type: 'Literal', value: 0 } }
+        ]
+      }
+    ]
+  },
+  python: {
+    type: 'Module',
+    language: 'Python',
+    body: [
+      {
+        type: 'FunctionDef',
+        name: 'fibonacci',
+        args: [{ type: 'arg', name: 'n' }],
+        body: [
+          { type: 'If', test: { type: 'Compare', left: 'n', op: '<=', right: 1 }, body: [{ type: 'Return', value: 'n' }] },
+          { type: 'Assign', targets: ['a'], value: { type: 'Constant', value: 0 } },
+          { type: 'Assign', targets: ['b'], value: { type: 'Constant', value: 1 } },
+          { type: 'For', target: 'i', iter: { type: 'Call', func: 'range', args: [2, 'n + 1'] }, body: [
+            { type: 'Assign', targets: ['c'], value: { type: 'BinOp', op: '+', left: 'a', right: 'b' } },
+            { type: 'Assign', targets: ['a'], value: 'b' },
+            { type: 'Assign', targets: ['b'], value: 'c' }
+          ]},
+          { type: 'Return', value: 'b' }
+        ]
+      }
+    ]
+  }
+};
+
+function generateAST() {
+  const lang = document.getElementById('astLang').value;
+  const ast = AST_SAMPLES[lang] || AST_SAMPLES.c;
+  currentASTData = ast;
+  const container = document.getElementById('astOutput');
+  container.innerHTML = '';
+  renderASTNode(ast, container, 0);
+  showToast('🌳', 'AST generated!');
+}
+
+function renderASTNode(node, container, depth) {
+  if (typeof node !== 'object' || node === null) return;
+
+  const div = document.createElement('div');
+  div.className = 'ast-container';
+
+  const isArray = Array.isArray(node);
+  const keys = isArray ? [...node.keys()] : Object.keys(node);
+
+  keys.forEach(key => {
+    const val = node[key];
+    const row = document.createElement('div');
+    row.style.padding = '2px 0 2px 16px';
+    row.style.position = 'relative';
+    row.style.borderLeft = '1px solid var(--border)';
+
+    if (typeof val === 'object' && val !== null) {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'ast-node';
+      wrapper.style.cssText = 'cursor:pointer;display:flex;align-items:center;gap:4px;padding:2px 4px;border-radius:4px;';
+      wrapper.onmouseenter = () => wrapper.style.background = 'var(--bg3)';
+      wrapper.onmouseleave = () => wrapper.style.background = '';
+
+      const toggle = document.createElement('span');
+      toggle.textContent = '▼';
+      toggle.className = 'ast-toggle';
+      toggle.style.fontSize = '.65rem';
+
+      const keySpan = document.createElement('span');
+      keySpan.className = 'ast-key';
+      keySpan.textContent = isArray ? `[${key}]` : key;
+
+      const typeSpan = document.createElement('span');
+      typeSpan.style.color = 'var(--text3)';
+      typeSpan.textContent = ` — `;
+
+      const valTypeSpan = document.createElement('span');
+      valTypeSpan.className = 'ast-type';
+      valTypeSpan.textContent = val.type || (Array.isArray(val) ? `Array[${val.length}]` : 'Object');
+
+      wrapper.append(toggle, keySpan, typeSpan, valTypeSpan);
+      row.appendChild(wrapper);
+
+      const childContainer = document.createElement('div');
+      childContainer.style.paddingLeft = '16px';
+      renderASTNode(val, childContainer, depth + 1);
+      row.appendChild(childContainer);
+
+      wrapper.onclick = () => {
+        const collapsed = childContainer.style.display === 'none';
+        childContainer.style.display = collapsed ? '' : 'none';
+        toggle.textContent = collapsed ? '▼' : '▶';
+      };
+    } else {
+      const keySpan = document.createElement('span');
+      keySpan.className = 'ast-key';
+      keySpan.textContent = isArray ? `[${key}]` : key;
+
+      const sep = document.createTextNode(': ');
+      const valSpan = document.createElement('span');
+      valSpan.className = 'ast-val';
+      valSpan.textContent = JSON.stringify(val);
+
+      row.style.display = 'flex';
+      row.style.gap = '4px';
+      row.style.alignItems = 'center';
+      row.append(keySpan, sep, valSpan);
+    }
+
+    div.appendChild(row);
+  });
+
+  container.appendChild(div);
+}
+
+function loadASTSample() {
+  document.getElementById('astInput').value = `int factorial(int n) {
+    if (n <= 1) return 1;
+    return n * factorial(n - 1);
+}
+
+int main() {
+    int result = factorial(5);
+    printf("%d\\n", result);
+    return 0;
+}`;
+  document.getElementById('astLang').value = 'c';
+}
+
+function expandAll() {
+  document.querySelectorAll('#astOutput [style*="display: none"]').forEach(el => {
+    el.style.display = '';
+    const parent = el.previousElementSibling;
+    if (parent) {
+      const toggle = parent.querySelector('.ast-toggle');
+      if (toggle) toggle.textContent = '▼';
+    }
+  });
+}
+
+function collapseAll() {
+  document.querySelectorAll('#astOutput .ast-container > div > div:last-child').forEach(el => {
+    if (el.querySelector('.ast-key')) return;
+    el.style.display = 'none';
+    const parent = el.previousElementSibling;
+    if (parent) {
+      const toggle = parent.querySelector('.ast-toggle');
+      if (toggle) toggle.textContent = '▶';
+    }
+  });
+}
+
+function copyAST() {
+  if (!currentASTData) { showToast('⚠️', 'Generate AST first'); return; }
+  navigator.clipboard.writeText(JSON.stringify(currentASTData, null, 2));
+  showToast('⎘', 'AST JSON copied!');
+}
+</script>
+</body>
+</html>
